@@ -16,7 +16,7 @@ from data_preprocessing import (
     drop_unnecessary_columns,
     load_data,
 )
-from feature_engineering import add_pca_components_to_split, add_synthetic_features
+from feature_engineering import add_synthetic_features
 from utils import save_model_results_to_csv
 
 RANDOM_STATE = 42
@@ -90,17 +90,14 @@ def run_targeted_ensemble(X, y):
 
     # Model 3: KNN after adding PCA components
     pca_base_features = ['age', 'trestbps', 'chol']
-    X_train_pca, X_test_pca, pca_columns = add_pca_components_to_split(
-        X_train_base,
-        X_test_base,
-        pca_base_features,
-        n_components=3
-    )
-    knn_numeric_features = base_numeric_features + pca_columns
+    
+    # Notice we pass the pca_features right into the preprocessor
     knn_preprocessor = build_preprocessor(
-        knn_numeric_features,
+        base_numeric_features,
         base_categorical_features,
-        scale_numeric=True
+        scale_numeric=True,
+        pca_features=pca_base_features,
+        n_components=3
     )
     knn_pipeline = Pipeline(steps=[
         ('preprocessor', knn_preprocessor),
@@ -114,13 +111,13 @@ def run_targeted_ensemble(X, y):
 
     rf_pipeline.fit(X_train_base, y_train)
     svm_pipeline.fit(X_train_fe, y_train)
-    knn_pipeline.fit(X_train_pca, y_train)
+    knn_pipeline.fit(X_train_base, y_train)
 
     rf_proba = rf_pipeline.predict_proba(X_test_base)[:, 1]
     # svm_scores = svm_pipeline.decision_function(X_test_fe)
     # svm_proba = 1.0 / (1.0 + np.exp(-svm_scores))
     svm_proba = svm_pipeline.predict_proba(X_test_fe)[:, 1]
-    knn_proba = knn_pipeline.predict_proba(X_test_pca)[:, 1]
+    knn_proba = knn_pipeline.predict_proba(X_test_base)[:, 1]
 
     rf_pred = (rf_proba >= 0.5).astype(int)
     svm_pred = svm_pipeline.predict(X_test_fe)
