@@ -1,22 +1,16 @@
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.svm import SVC
-from sklearn.decomposition import PCA
 
 from data_preprocessing import load_data, drop_unnecessary_columns, DATA_PATH_UCI, ORIGINAL_NUMERIC_FEATURES, ORIGINAL_CATEGORICAL_FEATURES, build_preprocessor
 from utils import save_model_results_to_csv
 
 RANDOM_STATE = 42
-
 
 def add_synthetic_features(df, categorical_features, numeric_features):
     df = df.copy()
@@ -52,74 +46,6 @@ def add_synthetic_features(df, categorical_features, numeric_features):
     updated_numeric_features.extend(['hr_competence_ratio', 'severe_ischemia'])
 
     return df, updated_categorical_features, updated_numeric_features
-
-
-def add_pca_components_to_split(X_train, X_test, pca_features, n_components=3):
-    train_copy = X_train.copy()
-    test_copy = X_test.copy()
-
-    available_features = [
-        col for col in pca_features if col in train_copy.columns and col in test_copy.columns
-    ]
-    if not available_features:
-        print('PCA skipped: no valid PCA base features found in split data.')
-        return train_copy, test_copy, []
-
-    # Coerce to numeric before scaling/PCA. Non-numeric values become NaN and are imputed.
-    train_numeric_df = train_copy[available_features].apply(
-        pd.to_numeric, errors='coerce')
-    test_numeric_df = test_copy[available_features].apply(
-        pd.to_numeric, errors='coerce')
-
-    imputer = SimpleImputer(strategy='median')
-    train_numeric = imputer.fit_transform(train_numeric_df)
-    test_numeric = imputer.transform(test_numeric_df)
-
-    max_components = min(n_components, len(
-        available_features), train_numeric.shape[0])
-    if max_components < 1:
-        print('PCA skipped: not enough samples/features for requested components.')
-        return train_copy, test_copy, []
-
-    scaler = StandardScaler()
-    pca = PCA(n_components=max_components, random_state=RANDOM_STATE)
-
-    train_scaled = scaler.fit_transform(train_numeric)
-    test_scaled = scaler.transform(test_numeric)
-
-    train_pca = pca.fit_transform(train_scaled)
-    test_pca = pca.transform(test_scaled)
-
-    pca_columns = [f'pca_{idx + 1}' for idx in range(max_components)]
-    for idx, column_name in enumerate(pca_columns):
-        train_copy[column_name] = train_pca[:, idx]
-        test_copy[column_name] = test_pca[:, idx]
-
-    explained = ', '.join(
-        f'{ratio:.3f}' for ratio in pca.explained_variance_ratio_)
-    print(f'PCA explained variance ratios: {explained}')
-
-    return train_copy, test_copy, pca_columns
-
-
-def build_preprocessor(numeric_features, categorical_features, scale_numeric=True):
-    numeric_steps = [('imputer', KNNImputer(n_neighbors=5))]
-    if scale_numeric:
-        numeric_steps.append(('scaler', StandardScaler()))
-
-    numeric_transformer = Pipeline(steps=numeric_steps)
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='most_frequent')),
-        ('onehot', OneHotEncoder(handle_unknown='ignore'))
-    ])
-
-    return ColumnTransformer(
-        transformers=[
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
-        ]
-    )
-
 
 def get_models():
     # Each tuple contains (model_name, estimator, preprocessor_key).
@@ -186,7 +112,9 @@ def run_scenario(base_X, y, scenario_name, use_feature_engineering=False, use_pc
     scenario_X = base_X.copy()
     scenario_numeric_features = list(ORIGINAL_NUMERIC_FEATURES)
     scenario_categorical_features = list(ORIGINAL_CATEGORICAL_FEATURES)
-    pca_numeric_features = ["age", "trestbps", "chol"]
+    
+    # Define PCA features only if we are using them
+    pca_numeric_features = ["age", "trestbps", "chol"] if use_pca else None
 
     if use_feature_engineering:
         scenario_X, scenario_categorical_features, scenario_numeric_features = add_synthetic_features(
@@ -203,20 +131,22 @@ def run_scenario(base_X, y, scenario_name, use_feature_engineering=False, use_pc
         random_state=RANDOM_STATE
     )
 
-    if use_pca:
-        X_train, X_test, pca_columns = add_pca_components_to_split(
-            X_train,
-            X_test,
-            pca_numeric_features,
-            n_components=3
-        )
-
-        scenario_numeric_features = scenario_numeric_features + pca_columns
-
+    # Build preprocessors, passing the pca_features argument
     preprocessors = {
-        'scaled': build_preprocessor(scenario_numeric_features, scenario_categorical_features, scale_numeric=True),
-        'unscaled': build_preprocessor(scenario_numeric_features, scenario_categorical_features, scale_numeric=False)
+        'scaled': build_preprocessor(
+            scenario_numeric_features, 
+            scenario_categorical_features, 
+            scale_numeric=True, 
+            pca_features=pca_numeric_features
+        ),
+        'unscaled': build_preprocessor(
+            scenario_numeric_features, 
+            scenario_categorical_features, 
+            scale_numeric=False, 
+            pca_features=pca_numeric_features
+        )
     }
+    
     models = get_models()
 
     results_df = evaluate_models(
