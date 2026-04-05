@@ -1,24 +1,13 @@
 import pandas as pd
-import os
-import json
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.svm import SVC
-from data_preprocessing import load_data, drop_unnecessary_columns, DATA_PATH_UCI, ALL_COLUMNS, ORIGINAL_NUMERIC_FEATURES, ORIGINAL_CATEGORICAL_FEATURES, build_preprocessor
+from data_preprocessing import load_data, drop_unnecessary_columns, ORIGINAL_NUMERIC_FEATURES, ORIGINAL_CATEGORICAL_FEATURES, build_preprocessor
 from utils import save_model_results_to_csv   
-
-try:
-    from xgboost import XGBClassifier
-except ImportError:
-    XGBClassifier = None
-
 
 RANDOM_STATE = 42
 
@@ -77,8 +66,7 @@ def tune_and_evaluate_models(X_train, X_test, y_train, y_test, preprocessor, sce
 
         # Apply the specific tree-friendly preprocessor for Random Forest
         if model_name in ["Random Forest", "XGBoost"]:
-            preprocessor_tree = build_preprocessor(
-                ORIGINAL_NUMERIC_FEATURES, ORIGINAL_CATEGORICAL_FEATURES, scale_numeric=False)
+            preprocessor_tree = build_preprocessor(ORIGINAL_NUMERIC_FEATURES, ORIGINAL_CATEGORICAL_FEATURES, scale_numeric=False)
             model_pipeline = Pipeline(steps=[
                 ('preprocessor', preprocessor_tree),
                 ('classifier', model)
