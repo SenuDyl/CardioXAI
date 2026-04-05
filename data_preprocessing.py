@@ -4,6 +4,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.decomposition import PCA
+
+RANDOM_STATE = 42
 
 DATA_PATH_UCI = "data/Heart Disease UCI/processed.cleveland.data"
 
@@ -62,20 +65,38 @@ def drop_unnecessary_columns(df):
     df = df.drop(columns=['num'])
     return df
 
-def build_preprocessor(numeric_features, categorical_features, scale_numeric=True):
+def build_preprocessor(numeric_features, categorical_features, scale_numeric=True, pca_features=None, n_components=3):
+    # 1. Standard Numeric Pipeline
     numeric_steps = [('imputer', KNNImputer(n_neighbors=5))]
     if scale_numeric:
         numeric_steps.append(('scaler', StandardScaler()))
-
     numeric_transformer = Pipeline(steps=numeric_steps)
+
+    # 2. Categorical Pipeline
     categorical_transformer = Pipeline(steps=[
         ('imputer', SimpleImputer(strategy='most_frequent')),
-        ('onehot', OneHotEncoder(handle_unknown='ignore'))
+        ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False)) # Kept sparse_output=False for safety
     ])
 
-    return ColumnTransformer(
-        transformers=[
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
+    # Base transformers
+    transformers = [
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ]
+
+    # 3. Dedicated PCA Pipeline (Only added if we request it)
+    if pca_features:
+        pca_steps = [
+            ('imputer', SimpleImputer(strategy='median')), 
+            ('scaler_before', StandardScaler()), # Scale before PCA (Required for PCA)
+            ('pca', PCA(n_components=n_components, random_state=RANDOM_STATE))
         ]
-    )
+        # This will calculate the PCA and append the components side-by-side 
+        # with the output of the 'num' and 'cat' pipelines!
+        if scale_numeric:
+            pca_steps.append(('scaler_after', StandardScaler()))
+            
+        pca_transformer = Pipeline(steps=pca_steps)
+        transformers.append(('pca', pca_transformer, pca_features))
+
+    return ColumnTransformer(transformers=transformers)
